@@ -109,12 +109,31 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
   // Utiliser historyRef.current et historyVersion pour mémoriser les données
   const chartData = useMemo(() => {
     const history = historyRef.current;
+    
+    // Vérifier que les données existent et ne sont pas vides
+    const cpu = history.cpu || [];
+    const memory = history.memory || [];
+    const disk = history.disk || [];
+    const network = history.network || [];
+    const load = history.load || [];
+
+    // Debug: afficher les données pour vérifier
+    console.log('NodeExporter chartData:', {
+      cpu: cpu.length,
+      memory: memory.length,
+      disk: disk.length,
+      network: network.length,
+      load: load.length,
+      sampleCpu: cpu.slice(0, 2),
+      sampleMemory: memory.slice(0, 2)
+    });
+
     return {
-      cpu: history.cpu || [],
-      memory: history.memory || [],
-      disk: history.disk || [],
-      network: history.network || [],
-      load: history.load || []
+      cpu,
+      memory,
+      disk,
+      network,
+      load
     };
   }, [historyRef, historyVersion]);
 
@@ -212,7 +231,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
             lines={[
               { dataKey: 'usage', name: 'Utilisation CPU %', color: '#3b82f6' }
             ]}
-            animate={true}
+            animate={false}
             showPoints={false}
             strokeWidth={2}
           />
@@ -238,7 +257,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
               { dataKey: 'used', name: 'Utilisée (GB)', color: '#ef4444', stackId: 'memory' },
               { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'memory' }
             ]}
-            animate={true}
+            animate={false}
             stacked={true}
             opacity={0.6}
             strokeWidth={2}
@@ -265,7 +284,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
               { dataKey: 'used', name: 'Utilisé (GB)', color: '#ef4444', stackId: 'disk' },
               { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'disk' }
             ]}
-            animate={true}
+            animate={false}
             stacked={true}
             opacity={0.6}
             strokeWidth={2}
@@ -292,7 +311,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
               { dataKey: 'rx', name: 'Reçu (MB)', color: '#3b82f6', stackId: 'network' },
               { dataKey: 'tx', name: 'Envoyé (MB)', color: '#10b981', stackId: 'network' }
             ]}
-            animate={true}
+            animate={false}
             stacked={true}
             opacity={0.6}
             strokeWidth={2}
@@ -320,7 +339,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
               { dataKey: 'load5', name: '5 minutes', color: '#f59e0b' },
               { dataKey: 'load15', name: '15 minutes', color: '#10b981' }
             ]}
-            animate={true}
+            animate={false}
             showPoints={false}
             strokeWidth={2}
           />

@@ -17,6 +17,11 @@ const CanvasAreaChart = ({
 }) => {
   const tooltipRef = useRef(null);
   const hoverDataRef = useRef(null);
+  
+  // Références pour les échelles stables
+  const scalesRef = useRef(null);
+  const lastDataLengthRef = useRef(0);
+  const lastDomainRef = useRef({ x: null, y: null });
 
   const {
     canvasRef,
@@ -30,7 +35,7 @@ const CanvasAreaChart = ({
     width,
     height,
     margin,
-    animate,
+    animate: false, // Désactiver l'animation pour éviter le scintillement
     smoothCurve: true
   });
 
@@ -46,7 +51,7 @@ const CanvasAreaChart = ({
       data: data.map(d => ({
         time: d.time,
         value: d[area.dataKey] || 0
-      })).filter(d => d.value != null)
+      })).filter(d => d.value != null && !isNaN(d.value))
     }));
   }, [data, areas, colors, stacked]);
 
@@ -85,39 +90,70 @@ const CanvasAreaChart = ({
     return result;
   }, [processedData, stacked]);
 
-  // Fonction de dessin principal
-  const drawChart = useCallback((progress = 1) => {
-    const context = setupCanvas();
-    if (!context || !stackedData.length) return;
+  // Création d'échelles stables pour éviter le scintillement
+  const createStableScales = useCallback(() => {
+    if (!stackedData.length || !data.length) return null;
 
-    // Effacer le canvas
-    context.clearRect(0, 0, width, height);
-
-    // Créer les échelles
     const allValues = stacked 
       ? stackedData.flatMap(area => area.data.map(d => d.y1 || d.value))
       : stackedData.flatMap(area => area.data.map(d => d.value));
     const timeValues = data.map(d => d.time);
 
-    if (!timeValues.length || !allValues.length) return;
+    if (!timeValues.length || !allValues.length) return null;
 
-    const xScale = d3.scalePoint()
-      .domain(timeValues)
-      .range([0, width - margin.left - margin.right])
-      .padding(0.1);
+    // Créer des domaines stables
+    const xDomain = timeValues;
+    const yMax = d3.max(allValues);
+    const yDomain = [0, yMax * 1.1];
 
-    const yScale = d3.scaleLinear()
-      .domain([0, d3.max(allValues) * 1.1])
-      .range([height - margin.top - margin.bottom, 0])
-      .nice();
+    // Vérifier si les domaines ont changé significativement
+    const currentDomain = { 
+      x: xDomain.join(','), 
+      y: `${yDomain[0]}-${yDomain[1]}` 
+    };
+
+    // Ne recréer les échelles que si nécessaire
+    if (!scalesRef.current || 
+        lastDataLengthRef.current !== data.length ||
+        lastDomainRef.current.x !== currentDomain.x ||
+        Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - yDomain[1]) > yDomain[1] * 0.1) {
+      
+      const xScale = d3.scalePoint()
+        .domain(xDomain)
+        .range([0, width - margin.left - margin.right])
+        .padding(0.1);
+
+      const yScale = d3.scaleLinear()
+        .domain(yDomain)
+        .range([height - margin.top - margin.bottom, 0])
+        .nice();
+
+      scalesRef.current = { x: xScale, y: yScale };
+      lastDataLengthRef.current = data.length;
+      lastDomainRef.current = currentDomain;
+    }
+
+    return scalesRef.current;
+  }, [stackedData, data, width, height, margin, stacked]);
+
+  // Fonction de dessin principal optimisée
+  const drawChart = useCallback(() => {
+    const context = setupCanvas();
+    if (!context || !stackedData.length) return;
+
+    const scales = createStableScales();
+    if (!scales) return;
+
+    // Effacer le canvas
+    context.clearRect(0, 0, width, height);
 
     const innerHeight = height - margin.top - margin.bottom;
 
-    // Dessiner la grille
-    drawGrid(context, { x: xScale, y: yScale });
+    // Dessiner la grille avec les échelles stables
+    drawGrid(context, scales);
 
-    // Dessiner les axes
-    drawAxes(context, { x: xScale, y: yScale });
+    // Dessiner les axes avec les échelles stables
+    drawAxes(context, scales);
 
     // Dessiner les aires
     context.save();
@@ -126,29 +162,32 @@ const CanvasAreaChart = ({
     stackedData.forEach((areaData, index) => {
       if (!areaData.data.length) return;
 
-      // Calculer les points pour l'animation
-      const totalPoints = areaData.data.length;
-      const visiblePoints = Math.floor(totalPoints * progress);
-      const animatedData = areaData.data.slice(0, visiblePoints);
+      // Filtrer les données valides
+      const validData = areaData.data.filter(d => 
+        d.time && 
+        !isNaN(d.value) && 
+        (stacked ? !isNaN(d.y0) && !isNaN(d.y1) : true)
+      );
 
-      if (animatedData.length < 2) return;
+      if (validData.length < 2) return;
 
       // Créer le générateur d'aire
       const area = d3.area()
-        .x(d => xScale(d.time))
-        .y0(d => stacked ? yScale(d.y0 || 0) : innerHeight)
-        .y1(d => yScale(stacked ? (d.y1 || d.value) : d.value))
+        .x(d => scales.x(d.time))
+        .y0(d => stacked ? scales.y(d.y0 || 0) : innerHeight)
+        .y1(d => scales.y(stacked ? (d.y1 || d.value) : d.value))
         .curve(d3.curveCardinal.tension(0.3))
         .context(context);
 
       // Dessiner l'aire avec gradient
       const gradient = context.createLinearGradient(0, 0, 0, innerHeight);
-      gradient.addColorStop(0, areaData.color + Math.floor(opacity * 255).toString(16).padStart(2, '0'));
+      const colorWithOpacity = areaData.color + Math.floor(opacity * 255).toString(16).padStart(2, '0');
+      gradient.addColorStop(0, colorWithOpacity);
       gradient.addColorStop(1, areaData.color + '10');
 
       context.fillStyle = gradient;
       context.beginPath();
-      area(animatedData);
+      area(validData);
       context.fill();
 
       // Dessiner la ligne de contour
@@ -160,37 +199,31 @@ const CanvasAreaChart = ({
 
       // Ligne supérieure
       const line = d3.line()
-        .x(d => xScale(d.time))
-        .y(d => yScale(stacked ? (d.y1 || d.value) : d.value))
+        .x(d => scales.x(d.time))
+        .y(d => scales.y(stacked ? (d.y1 || d.value) : d.value))
         .curve(d3.curveCardinal.tension(0.3))
         .context(context);
 
       context.beginPath();
-      line(animatedData);
+      line(validData);
       context.stroke();
 
       context.globalAlpha = 1;
     });
 
     context.restore();
-  }, [setupCanvas, stackedData, width, height, margin, drawGrid, drawAxes, stacked, opacity, strokeWidth, data]);
+  }, [setupCanvas, stackedData, width, height, margin, drawGrid, drawAxes, stacked, opacity, strokeWidth, createStableScales]);
 
   // Gestion du survol pour les tooltips
   const handleMouseMove = useCallback((event) => {
-    if (!canvasRef.current || !stackedData.length) return;
+    if (!canvasRef.current || !stackedData.length || !scalesRef.current) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left - margin.left;
 
     // Trouver le point le plus proche
     const timeValues = data.map(d => d.time);
-    const xScale = d3.scalePoint()
-      .domain(timeValues)
-      .range([0, width - margin.left - margin.right])
-      .padding(0.1);
-
-    // const closestTimeIndex = d3.bisectLeft(timeValues, xScale.invert(x));
-    // const closestTime = timeValues[closestTimeIndex];
+    const xScale = scalesRef.current.x;
 
     // Find the closest point without using invert
     let closestTimeIndex = 0;
@@ -225,13 +258,13 @@ const CanvasAreaChart = ({
           ${tooltipData.map(item => `
             <div class="flex items-center space-x-2">
               <div class="w-3 h-3 rounded-full" style="background-color: ${item.color}"></div>
-              <span>${item.name}: ${item.value}</span>
+              <span>${item.name}: ${typeof item.value === 'number' ? item.value.toFixed(2) : item.value}</span>
             </div>
           `).join('')}
         </div>
       `;
     }
-  }, [canvasRef, stackedData, data, margin, width]);
+  }, [canvasRef, stackedData, data, margin]);
 
   const handleMouseLeave = useCallback(() => {
     if (tooltipRef.current) {
@@ -240,12 +273,14 @@ const CanvasAreaChart = ({
     hoverDataRef.current = null;
   }, []);
 
-  // Effet pour redessiner quand les données changent
+  // Effet pour redessiner quand les données changent (sans animation)
   useEffect(() => {
     if (stackedData.length > 0) {
-      animateChart(drawChart);
+      // Utiliser requestAnimationFrame pour un rendu fluide
+      const rafId = requestAnimationFrame(drawChart);
+      return () => cancelAnimationFrame(rafId);
     }
-  }, [stackedData, animateChart, drawChart]);
+  }, [stackedData, drawChart]);
 
   return (
     <div className={`relative ${className}`}>
