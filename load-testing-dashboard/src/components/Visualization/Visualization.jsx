@@ -23,7 +23,7 @@ const Visualization = () => {
   const [activeSection, setActiveSection] = useState('locust');
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [isTestRunning, setIsTestRunning] = useState(false);
   
   // Refs pour éviter les re-créations inutiles
@@ -198,13 +198,28 @@ const Visualization = () => {
   }, [limitDataPoints, hasSignificantChange]);
 
   // Accumulation des données Node Exporter avec throttling et useRef
-  const accumulateNodeData = useCallback((newData) => {
-    if (!newData) return;
+ // Dans eneo-loadtest/load-testing-dashboard/src/components/Visualization/Visualization.jsx
 
-    const timestamp = new Date().toLocaleTimeString('fr-FR', { 
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit' 
+  // ... (le reste du fichier reste inchangé)
+
+  // Accumulation des données Node Exporter avec throttling et useRef
+  const accumulateNodeData = useCallback((newData) => {
+    // --- DÉBUT DU BLOC DE DÉBOGAGE ---
+    console.log('[DEBUG] -----------------------------------------');
+    console.log('[DEBUG] Appel de accumulateNodeData à', new Date().toLocaleTimeString());
+    console.log('[DEBUG] Données brutes reçues de Prometheus:', newData);
+    // --- FIN DU BLOC DE DÉBOGAGE ---
+
+    if (!newData) {
+        console.log('[DEBUG] newData est null ou undefined. Sortie.');
+        return;
+    }
+
+    const timestamp = new Date().toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      fractionalSecondDigits: 3 // Pour plus de précision
     });
 
     // Fonction utilitaire pour traiter les métriques Prometheus
@@ -224,10 +239,17 @@ const Visualization = () => {
     const load5 = processMetricData(newData['node_load5']);
     const load15 = processMetricData(newData['node_load15']);
 
+    // --- DÉBUT DU BLOC DE DÉBOGAGE ---
+    console.log(`[DEBUG] CPU Data (rate): ${cpuData.length} points`);
+    console.log(`[DEBUG] Memory Total: ${memoryTotal.length > 0 ? memoryTotal[0].value[1] : 'N/A'}`);
+    console.log(`[DEBUG] Memory Available: ${memoryAvailable.length > 0 ? memoryAvailable[0].value[1] : 'N/A'}`);
+    // --- FIN DU BLOC DE DÉBOGAGE ---
+
     // Mutez directement les tableaux dans la référence
     const newHistory = nodeHistoryRef.current;
     newHistory.latestData = newData; // Stockez les dernières données ici
 
+    // ... (le reste de la fonction de calcul reste la même)
     // Calculs pour CPU
     const calculateCpuUsage = () => {
       if (!cpuData.length) return 0;
@@ -245,10 +267,10 @@ const Visualization = () => {
       const available = parseFloat(memoryAvailable[0].value[1]);
       const used = total - available;
       const percentage = Math.round((used / total) * 100);
-      return { 
-        used: Math.round(used / 1024 / 1024 / 1024), 
-        total: Math.round(total / 1024 / 1024 / 1024), 
-        percentage 
+      return {
+        used: Math.round(used / 1024 / 1024 / 1024),
+        total: Math.round(total / 1024 / 1024 / 1024),
+        percentage
       };
     };
 
@@ -280,41 +302,21 @@ const Visualization = () => {
     const networkUsage = calculateNetworkUsage();
 
     // Points de données
-    const cpuPoint = {
-      time: timestamp,
-      usage: cpuUsage,
-      cores: cpuData.length
-    };
+    const cpuPoint = { time: timestamp, usage: cpuUsage, cores: cpuData.length };
+    const memoryPoint = { time: timestamp, used: memoryUsage.used, total: memoryUsage.total, percentage: memoryUsage.percentage, available: memoryUsage.total - memoryUsage.used };
+    const diskPoint = { time: timestamp, used: diskUsage.used, total: diskUsage.total, percentage: diskUsage.percentage, available: diskUsage.total - diskUsage.used };
+    const networkPoint = { time: timestamp, rx: networkUsage.rx, tx: networkUsage.tx, total: networkUsage.rx + networkUsage.tx };
+    const loadPoint = { time: timestamp, load1: load1.length ? Math.round(parseFloat(load1[0].value[1]) * 100) / 100 : 0, load5: load5.length ? Math.round(parseFloat(load5[0].value[1]) * 100) / 100 : 0, load15: load15.length ? Math.round(parseFloat(load15[0].value[1]) * 100) / 100 : 0 };
 
-    const memoryPoint = {
-      time: timestamp,
-      used: memoryUsage.used,
-      total: memoryUsage.total,
-      percentage: memoryUsage.percentage,
-      available: memoryUsage.total - memoryUsage.used
-    };
-
-    const diskPoint = {
-      time: timestamp,
-      used: diskUsage.used,
-      total: diskUsage.total,
-      percentage: diskUsage.percentage,
-      available: diskUsage.total - diskUsage.used
-    };
-
-    const networkPoint = {
-      time: timestamp,
-      rx: networkUsage.rx,
-      tx: networkUsage.tx,
-      total: networkUsage.rx + networkUsage.tx
-    };
-
-    const loadPoint = {
-      time: timestamp,
-      load1: load1.length ? Math.round(parseFloat(load1[0].value[1]) * 100) / 100 : 0,
-      load5: load5.length ? Math.round(parseFloat(load5[0].value[1]) * 100) / 100 : 0,
-      load15: load15.length ? Math.round(parseFloat(load15[0].value[1]) * 100) / 100 : 0
-    };
+    // --- DÉBUT DU BLOC DE DÉBOGAGE ---
+    console.log('[DEBUG] Points de données calculés:', {
+        cpuPoint,
+        memoryPoint,
+        diskPoint,
+        networkPoint,
+        loadPoint
+    });
+    // --- FIN DU BLOC DE DÉBOGAGE ---
 
     // Ajouter les nouveaux points et limiter la taille
     newHistory.cpu = limitDataPoints([...newHistory.cpu, cpuPoint]);
@@ -324,12 +326,13 @@ const Visualization = () => {
     newHistory.load = limitDataPoints([...newHistory.load, loadPoint]);
 
     // Mettre à jour les dernières données
-    //setLatestNodeData(newData);
     setLastUpdate(new Date());
-    
+
     // Forcez un re-rendu des graphiques en changeant la version
     setHistoryVersion(v => v + 1);
   }, [limitDataPoints]);
+
+  // ... (le reste du fichier reste inchangé)
 
   // ===================================================================
   //                    GESTION DES WEBSOCKETS ET API

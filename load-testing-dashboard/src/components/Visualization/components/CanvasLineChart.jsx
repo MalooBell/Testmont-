@@ -195,18 +195,13 @@ const CanvasLineChart = ({
     const timeValues = data.map(d => d.time);
     const xScale = scalesRef.current.x;
 
-    // Find the closest point without using invert
-    let closestTimeIndex = 0;
-    let minDistance = Infinity;
+    const bisector = d3.bisector(d => d.time).left;
+    const timeValue = xScale.invert(x); // Utilisez l'inversion de l'échelle si possible
+    const index = bisector(data, timeValue, 1);
 
-    const domain = xScale.domain();
-    domain.forEach((d, i) => {
-      const distance = Math.abs(xScale(d) - x);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestTimeIndex = i;
-      }
-    });
+    const d0 = data[index - 1];
+    const d1 = data[index];
+    const closestTimeIndex = (d1 && timeValue - d0.time > d1.time - timeValue) ? index : index -1;
     const closestTime = timeValues[closestTimeIndex];
 
     if (closestTime && tooltipRef.current) {
