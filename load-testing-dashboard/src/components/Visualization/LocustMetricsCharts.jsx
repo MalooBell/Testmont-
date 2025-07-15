@@ -31,20 +31,69 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
   // Dériver latestData depuis historyRef
   const latestData = useMemo(() => historyRef.current.latestData, [historyRef, historyVersion]);
 
+  // Fonction pour nettoyer et valider les données Locust
+  const cleanLocustData = useCallback((data) => {
+    if (!data || typeof data !== 'object') return null;
+    
+    // Nettoyer les valeurs NaN, Infinity et négatives
+    const cleanValue = (value, defaultValue = 0) => {
+      if (value == null || isNaN(value) || !isFinite(value) || value < 0) {
+        return defaultValue;
+      }
+      return Math.max(0, Number(value));
+    };
+
+    return {
+      ...data,
+      avg_response_time: cleanValue(data.avg_response_time),
+      median_response_time: cleanValue(data.median_response_time),
+      '95%_response_time': cleanValue(data['95%_response_time']),
+      min_response_time: cleanValue(data.min_response_time),
+      max_response_time: cleanValue(data.max_response_time),
+      current_rps: cleanValue(data.current_rps),
+      total_rps: cleanValue(data.total_rps),
+      num_requests: cleanValue(data.num_requests),
+      num_failures: cleanValue(data.num_failures)
+    };
+  }, []);
+
   // Mémoriser les métriques actuelles pour éviter les recalculs
   const currentMetrics = useMemo(() => {
     if (!latestData || !latestData.stats) return {};
-    return latestData.stats.find(stat => stat.name === 'Aggregated') || {};
-  }, [latestData]);
+    const aggregated = latestData.stats.find(stat => stat.name === 'Aggregated') || {};
+    return cleanLocustData(aggregated);
+  }, [latestData, cleanLocustData]);
 
   // Utiliser historyRef.current et historyVersion pour mémoriser les données RÉELLES
   const chartData = useMemo(() => {
     const history = historyRef.current;
+    
+    // Fonction pour filtrer les données aberrantes dans l'historique
+    const filterOutliers = (dataArray, key) => {
+      if (!dataArray.length) return dataArray;
+      
+      // Calculer la médiane et l'écart interquartile pour détecter les outliers
+      const values = dataArray.map(d => d[key]).filter(v => v != null && isFinite(v));
+      if (values.length < 3) return dataArray;
+      
+      values.sort((a, b) => a - b);
+      const q1 = values[Math.floor(values.length * 0.25)];
+      const q3 = values[Math.floor(values.length * 0.75)];
+      const iqr = q3 - q1;
+      const lowerBound = q1 - 1.5 * iqr;
+      const upperBound = q3 + 1.5 * iqr;
+      
+      return dataArray.filter(d => {
+        const value = d[key];
+        return value >= lowerBound && value <= upperBound;
+      });
+    };
+    
     return {
-      responseTime: history.responseTime || [],
-      requestsRate: history.requestsRate || [],
-      errorRate: history.errorRate || [],
-      userCount: history.userCount || [],
+      responseTime: filterOutliers(history.responseTime || [], 'avg'),
+      requestsRate: filterOutliers(history.requestsRate || [], 'rps'),
+      errorRate: filterOutliers(history.errorRate || [], 'errorRate'),
+      userCount: history.userCount || [], // Les utilisateurs ne devraient pas avoir d'outliers
       requestsTotal: history.requestsTotal || []
     };
   }, [historyRef, historyVersion]);

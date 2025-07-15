@@ -147,16 +147,52 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
     const calculateDetailedNetworkUsage = () => {
       if (!networkRx.length || !networkTx.length) return { rxMBps: 0, txMBps: 0, totalMBps: 0, interfaces: 0 };
       
-      // Filtrer les interfaces non-loopback
+      // Filtrer les interfaces non-loopback et actives
       const activeInterfaces = networkRx.filter(net => net.metric.device !== 'lo');
-      const totalRx = activeInterfaces.reduce((sum, net) => sum + parseFloat(net.value[1]), 0);
-      const totalTx = networkTx.filter(net => net.metric.device !== 'lo')
-                              .reduce((sum, net) => sum + parseFloat(net.value[1]), 0);
+      
+      // Calculer les taux de transfert en utilisant les données de rate() si disponibles
+      const networkRxRate = processMetricData(latestData['rate(node_network_receive_bytes_total[5m])']);
+      const networkTxRate = processMetricData(latestData['rate(node_network_transmit_bytes_total[5m])']);
+      
+      let rxMBps = 0;
+      let txMBps = 0;
+      
+      if (networkRxRate.length && networkTxRate.length) {
+        // Utiliser les taux calculés par Prometheus (plus précis)
+        const activeRxInterfaces = networkRxRate.filter(net => net.metric.device !== 'lo');
+        const activeTxInterfaces = networkTxRate.filter(net => net.metric.device !== 'lo');
+        
+        rxMBps = activeRxInterfaces.reduce((sum, net) => {
+          const rate = parseFloat(net.value[1]);
+          return sum + (isNaN(rate) ? 0 : Math.max(0, rate));
+        }, 0) / 1024 / 1024; // Convertir en MB/s
+        
+        txMBps = activeTxInterfaces.reduce((sum, net) => {
+          const rate = parseFloat(net.value[1]);
+          return sum + (isNaN(rate) ? 0 : Math.max(0, rate));
+        }, 0) / 1024 / 1024; // Convertir en MB/s
+      } else {
+        // Fallback : utiliser les valeurs cumulatives (moins précis)
+        const totalRx = activeInterfaces.reduce((sum, net) => {
+          const value = parseFloat(net.value[1]);
+          return sum + (isNaN(value) ? 0 : value);
+        }, 0);
+        
+        const totalTx = networkTx.filter(net => net.metric.device !== 'lo')
+                                .reduce((sum, net) => {
+                                  const value = parseFloat(net.value[1]);
+                                  return sum + (isNaN(value) ? 0 : value);
+                                }, 0);
+        
+        // Estimation approximative du taux (pas très précise)
+        rxMBps = totalRx / 1024 / 1024 / 300; // Divisé par 5 minutes en secondes
+        txMBps = totalTx / 1024 / 1024 / 300;
+      }
       
       return {
-        rxMBps: Math.round(totalRx / 1024 / 1024 * 10) / 10,
-        txMBps: Math.round(totalTx / 1024 / 1024 * 10) / 10,
-        totalMBps: Math.round((totalRx + totalTx) / 1024 / 1024 * 10) / 10,
+        rxMBps: Math.round(rxMBps * 100) / 100,
+        txMBps: Math.round(txMBps * 100) / 100,
+        totalMBps: Math.round((rxMBps + txMBps) * 100) / 100,
         interfaces: activeInterfaces.length
       };
     };

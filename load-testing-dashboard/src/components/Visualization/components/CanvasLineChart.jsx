@@ -60,23 +60,31 @@ const CanvasLineChart = ({
   const createStableScales = useCallback(() => {
     if (!processedData.length || !data.length) return null;
 
-    const allValues = processedData.flatMap(line => line.data.map(d => d.value));
+    // Filtrer les valeurs aberrantes pour des échelles plus stables
+    const allValues = processedData.flatMap(line => 
+      line.data.map(d => d.value).filter(v => v != null && isFinite(v) && v >= 0)
+    );
     const timeValues = data.map(d => d.time);
 
     if (!timeValues.length || !allValues.length) return null;
 
     // Créer des domaines avec repères fixes si activé
     const xDomain = timeValues;
-    const yMin = Math.min(0, d3.min(allValues));
+    const yMin = Math.max(0, d3.min(allValues) * 0.95); // Éviter les valeurs négatives
     const yMax = d3.max(allValues);
     
     let finalYDomain;
     if (useFixedScale && fixedDomainRef.current.y) {
       // Utiliser le domaine fixe existant, mais l'étendre si nécessaire
       const [currentMin, currentMax] = fixedDomainRef.current.y;
+      
+      // Éviter les changements trop fréquents d'échelle (seuil de 20%)
+      const shouldUpdateMax = yMax > currentMax * 1.2;
+      const shouldUpdateMin = yMin < currentMin * 0.8;
+      
       finalYDomain = [
-        Math.min(currentMin, yMin),
-        Math.max(currentMax, yMax * 1.1)
+        shouldUpdateMin ? yMin : currentMin,
+        shouldUpdateMax ? yMax * 1.1 : currentMax
       ];
     } else {
       finalYDomain = [yMin, yMax * 1.1];
@@ -97,7 +105,7 @@ const CanvasLineChart = ({
     if (!scalesRef.current || 
         lastDataLengthRef.current !== data.length ||
         lastDomainRef.current.x !== currentDomain.x ||
-        (!useFixedScale && Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - finalYDomain[1]) > finalYDomain[1] * 0.1)) {
+        (!useFixedScale && Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - finalYDomain[1]) > finalYDomain[1] * 0.2)) {
       
       const xScale = d3.scalePoint()
         .domain(xDomain)

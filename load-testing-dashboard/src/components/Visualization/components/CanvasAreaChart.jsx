@@ -96,9 +96,10 @@ const CanvasAreaChart = ({
   const createStableScales = useCallback(() => {
     if (!stackedData.length || !data.length) return null;
 
+    // Filtrer les valeurs aberrantes pour des échelles plus stables
     const allValues = stacked 
-      ? stackedData.flatMap(area => area.data.map(d => d.y1 || d.value))
-      : stackedData.flatMap(area => area.data.map(d => d.value));
+      ? stackedData.flatMap(area => area.data.map(d => d.y1 || d.value).filter(v => v != null && isFinite(v) && v >= 0))
+      : stackedData.flatMap(area => area.data.map(d => d.value).filter(v => v != null && isFinite(v) && v >= 0));
     const timeValues = data.map(d => d.time);
 
     if (!timeValues.length || !allValues.length) return null;
@@ -111,9 +112,13 @@ const CanvasAreaChart = ({
     if (useFixedScale && fixedDomainRef.current.y) {
       // Utiliser le domaine fixe existant, mais l'étendre si nécessaire
       const [currentMin, currentMax] = fixedDomainRef.current.y;
+      
+      // Éviter les changements trop fréquents d'échelle (seuil de 20%)
+      const shouldUpdateMax = yMax > currentMax * 1.2;
+      
       finalYDomain = [
         currentMin,
-        Math.max(currentMax, yMax * 1.1)
+        shouldUpdateMax ? yMax * 1.1 : currentMax
       ];
     } else {
       finalYDomain = [0, yMax * 1.1];
@@ -134,7 +139,7 @@ const CanvasAreaChart = ({
     if (!scalesRef.current || 
         lastDataLengthRef.current !== data.length ||
         lastDomainRef.current.x !== currentDomain.x ||
-        (!useFixedScale && Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - finalYDomain[1]) > finalYDomain[1] * 0.1)) {
+        (!useFixedScale && Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - finalYDomain[1]) > finalYDomain[1] * 0.2)) {
       
       const xScale = d3.scalePoint()
         .domain(xDomain)
