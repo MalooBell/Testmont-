@@ -19,10 +19,10 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
     overview: true,
     cpuDetailed: true,
     memoryDetailed: true,
+    diskUsage: true,
     diskIO: true,
     networkTraffic: true,
-    systemLoad: true,
-    processStats: true
+    systemLoad: true
   });
 
   const toggleChart = (chartId) => {
@@ -41,14 +41,15 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
     return metricData.data.result;
   }, []);
 
-    
-  // Mémoriser les métriques actuelles avec plus de détails
+  // Mémoriser les métriques actuelles avec données réelles uniquement
   const currentMetrics = useMemo(() => {
     if (!latestData) return {};
 
     const cpuData = processMetricData(latestData['rate(node_cpu_seconds_total[5m])']);
     const memoryTotal = processMetricData(latestData['node_memory_MemTotal_bytes']);
     const memoryAvailable = processMetricData(latestData['node_memory_MemAvailable_bytes']);
+    const memCached = processMetricData(latestData['node_memory_Cached_bytes']);
+    const memBuffers = processMetricData(latestData['node_memory_Buffers_bytes']);
     const diskSize = processMetricData(latestData['node_filesystem_size_bytes']);
     const diskAvail = processMetricData(latestData['node_filesystem_avail_bytes']);
     const load1 = processMetricData(latestData['node_load1']);
@@ -59,7 +60,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
     const diskRead = processMetricData(latestData['node_disk_read_bytes_total']);
     const diskWrite = processMetricData(latestData['node_disk_written_bytes_total']);
 
-    // Calculs CPU détaillés par mode
+    // Calculs CPU détaillés par mode (données réelles)
     const calculateDetailedCpuUsage = () => {
       if (!cpuData.length) return { total: 0, user: 0, system: 0, idle: 0, iowait: 0 };
       
@@ -90,7 +91,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
       };
     };
 
-    // Calculs mémoire détaillés
+    // Calculs mémoire détaillés (données réelles)
     const calculateDetailedMemoryUsage = () => {
       if (!memoryTotal.length || !memoryAvailable.length) return { used: 0, total: 0, percentage: 0, cached: 0, buffers: 0 };
       const total = parseFloat(memoryTotal[0].value[1]);
@@ -98,38 +99,66 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
       const used = total - available;
       const percentage = Math.round((used / total) * 100);
       
-      // Essayer de récupérer cached et buffers si disponibles
-      const memCached = processMetricData(latestData['node_memory_Cached_bytes']);
-      const memBuffers = processMetricData(latestData['node_memory_Buffers_bytes']);
+      const cached = memCached.length ? parseFloat(memCached[0].value[1]) : 0;
+      const buffers = memBuffers.length ? parseFloat(memBuffers[0].value[1]) : 0;
       
       return { 
         used: Math.round(used / 1024 / 1024 / 1024 * 10) / 10, 
         total: Math.round(total / 1024 / 1024 / 1024 * 10) / 10, 
         percentage,
         available: Math.round(available / 1024 / 1024 / 1024 * 10) / 10,
-        cached: memCached.length ? Math.round(parseFloat(memCached[0].value[1]) / 1024 / 1024 / 1024 * 10) / 10 : 0,
-        buffers: memBuffers.length ? Math.round(parseFloat(memBuffers[0].value[1]) / 1024 / 1024 / 1024 * 10) / 10 : 0
+        cached: Math.round(cached / 1024 / 1024 / 1024 * 10) / 10,
+        buffers: Math.round(buffers / 1024 / 1024 / 1024 * 10) / 10
       };
     };
 
-    // Calculs disque I/O
-    const calculateDiskIO = () => {
-      if (!diskRead.length || !diskWrite.length) return { readMBps: 0, writeMBps: 0, totalIOPS: 0 };
+    // Calculs disque (données réelles)
+    const calculateDiskUsage = () => {
+      if (!diskSize.length || !diskAvail.length) return { used: 0, total: 0, available: 0, percentage: 0 };
       
-      // Calculer les taux de lecture/écriture (approximation)
+      // Filtrer les systèmes de fichiers pertinents (éviter tmpfs, etc.)
+      const relevantDisks = diskSize.filter(disk => 
+        disk.metric.fstype && 
+        !['tmpfs', 'devtmpfs', 'overlay'].includes(disk.metric.fstype) &&
+        disk.metric.mountpoint && 
+        disk.metric.mountpoint.startsWith('/')
+      );
+      
+      if (!relevantDisks.length) return { used: 0, total: 0, available: 0, percentage: 0 };
+      
+      const totalSize = relevantDisks.reduce((sum, disk) => sum + parseFloat(disk.value[1]), 0);
+      const totalAvail = diskAvail
+        .filter(disk => relevantDisks.some(rd => rd.metric.device === disk.metric.device))
+        .reduce((sum, disk) => sum + parseFloat(disk.value[1]), 0);
+      
+      const used = totalSize - totalAvail;
+      const percentage = totalSize > 0 ? Math.round((used / totalSize) * 100) : 0;
+      
+      return {
+        used: Math.round(used / 1024 / 1024 / 1024 * 10) / 10,
+        total: Math.round(totalSize / 1024 / 1024 / 1024 * 10) / 10,
+        available: Math.round(totalAvail / 1024 / 1024 / 1024 * 10) / 10,
+        percentage
+      };
+    };
+
+    // Calculs disque I/O (données réelles)
+    const calculateDiskIO = () => {
+      if (!diskRead.length || !diskWrite.length) return { readBytes: 0, writeBytes: 0, totalIO: 0 };
+      
       const totalRead = diskRead.reduce((sum, disk) => sum + parseFloat(disk.value[1]), 0);
       const totalWrite = diskWrite.reduce((sum, disk) => sum + parseFloat(disk.value[1]), 0);
       
       return {
-        readMBps: Math.round(totalRead / 1024 / 1024 * 10) / 10,
-        writeMBps: Math.round(totalWrite / 1024 / 1024 * 10) / 10,
-        totalIOPS: Math.round((totalRead + totalWrite) / 1024 / 1024 * 10) / 10
+        readBytes: Math.round(totalRead / 1024 / 1024 * 10) / 10,
+        writeBytes: Math.round(totalWrite / 1024 / 1024 * 10) / 10,
+        totalIO: Math.round((totalRead + totalWrite) / 1024 / 1024 * 10) / 10
       };
     };
 
-    // Calculs réseau détaillés
+    // Calculs réseau détaillés (données réelles)
     const calculateDetailedNetworkUsage = () => {
-      if (!networkRx.length || !networkTx.length) return { rxMBps: 0, txMBps: 0, totalMBps: 0, interfaces: 0 };
+      if (!networkRx.length || !networkTx.length) return { rxBytes: 0, txBytes: 0, totalBytes: 0, interfaces: 0 };
       
       // Filtrer les interfaces non-loopback
       const activeInterfaces = networkRx.filter(net => net.metric.device !== 'lo');
@@ -138,21 +167,23 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
                               .reduce((sum, net) => sum + parseFloat(net.value[1]), 0);
       
       return {
-        rxMBps: Math.round(totalRx / 1024 / 1024 * 10) / 10,
-        txMBps: Math.round(totalTx / 1024 / 1024 * 10) / 10,
-        totalMBps: Math.round((totalRx + totalTx) / 1024 / 1024 * 10) / 10,
+        rxBytes: Math.round(totalRx / 1024 / 1024 * 10) / 10,
+        txBytes: Math.round(totalTx / 1024 / 1024 * 10) / 10,
+        totalBytes: Math.round((totalRx + totalTx) / 1024 / 1024 * 10) / 10,
         interfaces: activeInterfaces.length
       };
     };
 
     const cpuUsage = calculateDetailedCpuUsage();
     const memoryUsage = calculateDetailedMemoryUsage();
+    const diskUsage = calculateDiskUsage();
     const diskIO = calculateDiskIO();
     const networkUsage = calculateDetailedNetworkUsage();
 
     return {
       cpuUsage,
       memoryUsage,
+      diskUsage,
       diskIO,
       networkUsage,
       load1: load1.length ? parseFloat(load1[0].value[1]).toFixed(2) : 0,
@@ -161,62 +192,18 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
     };
   }, [latestData, processMetricData]);
 
-  // Utiliser historyRef.current et historyVersion pour mémoriser les données avec plus de détails
+  // Utiliser historyRef.current et historyVersion pour mémoriser les données RÉELLES
   const chartData = useMemo(() => {
     const history = historyRef.current;
     
-    // Données enrichies pour des graphiques plus dynamiques
-    const cpuDetailed = history.cpu?.map(point => ({
-      ...point,
-      user: point.usage * 0.6 + Math.random() * 10, // Simulation de données plus réalistes
-      system: point.usage * 0.3 + Math.random() * 5,
-      iowait: Math.random() * 3,
-      idle: 100 - point.usage
-    })) || [];
-
-    const memoryDetailed = history.memory?.map(point => ({
-      ...point,
-      cached: point.available * 0.3 + Math.random() * 0.5,
-      buffers: point.available * 0.1 + Math.random() * 0.2,
-      free: point.available - (point.available * 0.4)
-    })) || [];
-
-    const diskIO = history.disk?.map((point, index) => ({
-      time: point.time,
-      readMBps: Math.random() * 50 + index * 0.1, // Simulation d'I/O variables
-      writeMBps: Math.random() * 30 + index * 0.05,
-      utilization: Math.min(100, point.percentage + Math.random() * 20)
-    })) || [];
-
-    const networkTraffic = history.network?.map((point, index) => ({
-      time: point.time,
-      rxMBps: point.rx / 10 + Math.random() * 5, // Conversion en Mbps avec variation
-      txMBps: point.tx / 10 + Math.random() * 3,
-      packetsRx: Math.floor(Math.random() * 1000) + index * 10,
-      packetsTx: Math.floor(Math.random() * 800) + index * 8
-    })) || [];
-
-    const systemLoad = history.load?.map(point => ({
-      ...point,
-      processes: Math.floor(Math.random() * 200) + 150, // Simulation du nombre de processus
-      runQueue: Math.floor(point.load1 * 2) + Math.random() * 3,
-      contextSwitches: Math.floor(Math.random() * 10000) + 5000
-    })) || [];
-
-    console.log('NodeExporter enriched chartData:', {
-      cpuDetailed: cpuDetailed.length,
-      memoryDetailed: memoryDetailed.length,
-      diskIO: diskIO.length,
-      networkTraffic: networkTraffic.length,
-      systemLoad: systemLoad.length
-    });
-
+    // Données réelles uniquement - pas de simulation
     return {
-      cpuDetailed,
-      memoryDetailed,
-      diskIO,
-      networkTraffic,
-      systemLoad
+      cpuDetailed: history.cpu || [],
+      memoryDetailed: history.memory || [],
+      diskUsage: history.disk || [],
+      diskIO: history.disk || [], // Même source mais affichage différent
+      networkTraffic: history.network || [],
+      systemLoad: history.load || []
     };
   }, [historyRef, historyVersion]);
 
@@ -266,7 +253,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
 
   return (
     <div className="space-y-6">
-      {/* Métriques principales enrichies */}
+      {/* Métriques principales */}
       {visibleCharts.overview && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           <MetricCard
@@ -291,16 +278,16 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
             color={currentMetrics.memoryUsage?.percentage > 80 ? 'error' : currentMetrics.memoryUsage?.percentage > 60 ? 'warning' : 'success'}
           />
           <MetricCard
-            title="I/O Disque"
-            value={currentMetrics.diskIO?.totalIOPS || 0}
-            unit="MB/s"
+            title="Disque"
+            value={currentMetrics.diskUsage?.percentage || 0}
+            unit="%"
             icon={ServerIcon}
-            color="warning"
+            color={currentMetrics.diskUsage?.percentage > 80 ? 'error' : currentMetrics.diskUsage?.percentage > 60 ? 'warning' : 'success'}
           />
           <MetricCard
             title="Réseau Total"
-            value={currentMetrics.networkUsage?.totalMBps || 0}
-            unit="MB/s"
+            value={currentMetrics.networkUsage?.totalBytes || 0}
+            unit="MB"
             icon={WifiIcon}
             color="primary"
           />
@@ -314,7 +301,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         </div>
       )}
 
-      {/* Graphique CPU détaillé par mode */}
+      {/* 1. Graphique CPU détaillé par mode */}
       <ChartContainer 
         title="Utilisation CPU Détaillée par Mode" 
         chartId="cpuDetailed"
@@ -323,27 +310,24 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.cpuDetailed.length > 0 ? (
           <CanvasAreaChart
             data={chartData.cpuDetailed}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             areas={[
-              { dataKey: 'user', name: 'User %', color: '#3b82f6', stackId: 'cpu' },
-              { dataKey: 'system', name: 'System %', color: '#ef4444', stackId: 'cpu' },
-              { dataKey: 'iowait', name: 'I/O Wait %', color: '#f59e0b', stackId: 'cpu' },
-              { dataKey: 'idle', name: 'Idle %', color: '#22c55e', stackId: 'cpu' }
+              { dataKey: 'usage', name: 'CPU Total %', color: '#3b82f6' }
             ]}
-            animate={false}
-            stacked={true}
+            animate={true}
+            stacked={false}
             opacity={0.7}
-            strokeWidth={1}
+            strokeWidth={2}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée CPU détaillée disponible
           </div>
         )}
       </ChartContainer>
 
-      {/* Graphique mémoire détaillé */}
+      {/* 2. Graphique mémoire détaillé */}
       <ChartContainer 
         title="Utilisation Mémoire Détaillée" 
         chartId="memoryDetailed"
@@ -352,27 +336,52 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.memoryDetailed.length > 0 ? (
           <CanvasAreaChart
             data={chartData.memoryDetailed}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             areas={[
               { dataKey: 'used', name: 'Utilisée (GB)', color: '#ef4444', stackId: 'memory' },
-              { dataKey: 'cached', name: 'Cache (GB)', color: '#f59e0b', stackId: 'memory' },
-              { dataKey: 'buffers', name: 'Buffers (GB)', color: '#8b5cf6', stackId: 'memory' },
-              { dataKey: 'free', name: 'Libre (GB)', color: '#22c55e', stackId: 'memory' }
+              { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'memory' }
             ]}
-            animate={false}
+            animate={true}
             stacked={true}
             opacity={0.6}
             strokeWidth={2}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée mémoire détaillée disponible
           </div>
         )}
       </ChartContainer>
 
-      {/* Graphique I/O disque */}
+      {/* 3. Graphique utilisation disque (NOUVEAU - disksize et diskavail) */}
+      <ChartContainer 
+        title="Utilisation de l'Espace Disque" 
+        chartId="diskUsage"
+        dataCount={chartData.diskUsage.length}
+      >
+        {chartData.diskUsage.length > 0 ? (
+          <CanvasAreaChart
+            data={chartData.diskUsage}
+            width={1200}
+            height={350}
+            areas={[
+              { dataKey: 'used', name: 'Utilisé (GB)', color: '#ef4444', stackId: 'disk' },
+              { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'disk' }
+            ]}
+            animate={true}
+            stacked={true}
+            opacity={0.6}
+            strokeWidth={2}
+          />
+        ) : (
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
+            Aucune donnée d'utilisation disque disponible
+          </div>
+        )}
+      </ChartContainer>
+
+      {/* 4. Graphique I/O disque */}
       <ChartContainer 
         title="Activité I/O Disque" 
         chartId="diskIO"
@@ -381,25 +390,23 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.diskIO.length > 0 ? (
           <CanvasLineChart
             data={chartData.diskIO}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             lines={[
-              { dataKey: 'readMBps', name: 'Lecture (MB/s)', color: '#3b82f6' },
-              { dataKey: 'writeMBps', name: 'Écriture (MB/s)', color: '#ef4444' },
-              { dataKey: 'utilization', name: 'Utilisation %', color: '#f59e0b' }
+              { dataKey: 'percentage', name: 'Utilisation %', color: '#f59e0b' }
             ]}
-            animate={false}
+            animate={true}
             showPoints={true}
             strokeWidth={2}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée I/O disque disponible
           </div>
         )}
       </ChartContainer>
 
-      {/* Graphique trafic réseau */}
+      {/* 5. Graphique trafic réseau */}
       <ChartContainer 
         title="Trafic Réseau Détaillé" 
         chartId="networkTraffic"
@@ -408,53 +415,52 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.networkTraffic.length > 0 ? (
           <CanvasAreaChart
             data={chartData.networkTraffic}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             areas={[
-              { dataKey: 'rxMBps', name: 'Réception (MB/s)', color: '#3b82f6', stackId: 'network' },
-              { dataKey: 'txMBps', name: 'Transmission (MB/s)', color: '#10b981', stackId: 'network' }
+              { dataKey: 'rx', name: 'Réception (MB)', color: '#3b82f6', stackId: 'network' },
+              { dataKey: 'tx', name: 'Transmission (MB)', color: '#10b981', stackId: 'network' }
             ]}
-            animate={false}
+            animate={true}
             stacked={false}
             opacity={0.6}
             strokeWidth={2}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée réseau disponible
           </div>
         )}
       </ChartContainer>
 
-      {/* Graphique charge système */}
+      {/* 6. Graphique charge système */}
       <ChartContainer 
-        title="Charge Système et Processus" 
+        title="Charge Système et Load Average" 
         chartId="systemLoad"
         dataCount={chartData.systemLoad.length}
       >
         {chartData.systemLoad.length > 0 ? (
           <CanvasLineChart
             data={chartData.systemLoad}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             lines={[
               { dataKey: 'load1', name: 'Load 1min', color: '#ef4444' },
               { dataKey: 'load5', name: 'Load 5min', color: '#f59e0b' },
-              { dataKey: 'load15', name: 'Load 15min', color: '#10b981' },
-              { dataKey: 'runQueue', name: 'Run Queue', color: '#8b5cf6' }
+              { dataKey: 'load15', name: 'Load 15min', color: '#10b981' }
             ]}
-            animate={false}
+            animate={true}
             showPoints={false}
             strokeWidth={2}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée de charge système disponible
           </div>
         )}
       </ChartContainer>
 
-      {/* Détails système en temps réel enrichis */}
+      {/* Détails système en temps réel */}
       {latestData && (
         <div className="card">
           <h4 className="text-lg font-medium text-gray-900 mb-4">Informations Système Détaillées (Temps Réel)</h4>
@@ -504,19 +510,23 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
             </div>
             
             <div>
-              <h5 className="font-medium text-gray-700 mb-2">I/O Disque</h5>
+              <h5 className="font-medium text-gray-700 mb-2">Disque</h5>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Lecture:</span>
-                  <span className="font-medium">{currentMetrics.diskIO?.readMBps || 0} MB/s</span>
+                  <span className="text-gray-500">Utilisé:</span>
+                  <span className="font-medium">{currentMetrics.diskUsage?.used || 0} GB</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Écriture:</span>
-                  <span className="font-medium">{currentMetrics.diskIO?.writeMBps || 0} MB/s</span>
+                  <span className="text-gray-500">Disponible:</span>
+                  <span className="font-medium">{currentMetrics.diskUsage?.available || 0} GB</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Total I/O:</span>
-                  <span className="font-medium">{currentMetrics.diskIO?.totalIOPS || 0} MB/s</span>
+                  <span className="text-gray-500">Total:</span>
+                  <span className="font-medium">{currentMetrics.diskUsage?.total || 0} GB</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Utilisation:</span>
+                  <span className="font-medium">{currentMetrics.diskUsage?.percentage || 0}%</span>
                 </div>
               </div>
             </div>
@@ -526,11 +536,11 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">RX:</span>
-                  <span className="font-medium">{currentMetrics.networkUsage?.rxMBps || 0} MB/s</span>
+                  <span className="font-medium">{currentMetrics.networkUsage?.rxBytes || 0} MB</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">TX:</span>
-                  <span className="font-medium">{currentMetrics.networkUsage?.txMBps || 0} MB/s</span>
+                  <span className="font-medium">{currentMetrics.networkUsage?.txBytes || 0} MB</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Interfaces:</span>
@@ -546,29 +556,33 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         </div>
       )}
 
-      {/* Résumé de l'historique enrichi */}
+      {/* Résumé de l'historique */}
       <div className="card">
         <h4 className="text-lg font-medium text-gray-900 mb-4">Résumé de l'Historique Accumulé</h4>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
           <div className="text-center p-3 bg-blue-50 rounded-lg">
             <div className="text-lg font-bold text-blue-700">{chartData.cpuDetailed.length}</div>
-            <div className="text-xs text-blue-600">Points CPU détaillés</div>
+            <div className="text-xs text-blue-600">Points CPU</div>
           </div>
           <div className="text-center p-3 bg-green-50 rounded-lg">
             <div className="text-lg font-bold text-green-700">{chartData.memoryDetailed.length}</div>
-            <div className="text-xs text-green-600">Points mémoire détaillés</div>
+            <div className="text-xs text-green-600">Points mémoire</div>
           </div>
           <div className="text-center p-3 bg-yellow-50 rounded-lg">
-            <div className="text-lg font-bold text-yellow-700">{chartData.diskIO.length}</div>
-            <div className="text-xs text-yellow-600">Points I/O disque</div>
+            <div className="text-lg font-bold text-yellow-700">{chartData.diskUsage.length}</div>
+            <div className="text-xs text-yellow-600">Points disque</div>
           </div>
           <div className="text-center p-3 bg-purple-50 rounded-lg">
-            <div className="text-lg font-bold text-purple-700">{chartData.networkTraffic.length}</div>
-            <div className="text-xs text-purple-600">Points réseau</div>
+            <div className="text-lg font-bold text-purple-700">{chartData.diskIO.length}</div>
+            <div className="text-xs text-purple-600">Points I/O</div>
+          </div>
+          <div className="text-center p-3 bg-indigo-50 rounded-lg">
+            <div className="text-lg font-bold text-indigo-700">{chartData.networkTraffic.length}</div>
+            <div className="text-xs text-indigo-600">Points réseau</div>
           </div>
           <div className="text-center p-3 bg-red-50 rounded-lg">
             <div className="text-lg font-bold text-red-700">{chartData.systemLoad.length}</div>
-            <div className="text-xs text-red-600">Points charge système</div>
+            <div className="text-xs text-red-600">Points charge</div>
           </div>
         </div>
       </div>
