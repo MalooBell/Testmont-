@@ -3,9 +3,9 @@ import * as d3 from 'd3';
 
 export const useCanvasChart = ({
   data = [],
-  width = 2000,
-  height = 400,
-  margin = { top: 20, right: 3, bottom: 40, left: 5 },
+  width = 1200,
+  height = 350,
+  margin = { top: 20, right: 50, bottom: 40, left: 60 },
   animate = true,
   smoothCurve = true
 }) => {
@@ -73,7 +73,7 @@ export const useCanvasChart = ({
     return scales;
   }, [width, height, margin]);
 
-  // Fonction de dessin de la grille
+  // Fonction de dessin de la grille optimisée
   const drawGrid = useCallback((context, scales) => {
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
@@ -81,11 +81,12 @@ export const useCanvasChart = ({
     context.save();
     context.translate(margin.left, margin.top);
     context.strokeStyle = '#f0f0f0';
-    context.lineWidth = 1;
+    context.lineWidth = 0.5;
+    context.globalAlpha = 0.7;
 
-    // Grille verticale
+    // Grille verticale (réduite pour éviter le scintillement)
     if (scales.x) {
-      const ticks = scales.x.domain().filter((_, i) => i % Math.ceil(scales.x.domain().length / 8) === 0);
+      const ticks = scales.x.domain().filter((_, i) => i % Math.ceil(scales.x.domain().length / 6) === 0);
       ticks.forEach(tick => {
         const x = scales.x(tick);
         context.beginPath();
@@ -99,7 +100,7 @@ export const useCanvasChart = ({
     const yScaleKey = Object.keys(scales).find(key => key !== 'x');
     if (yScaleKey && scales[yScaleKey]) {
       const yScale = scales[yScaleKey];
-      const ticks = yScale.ticks(6);
+      const ticks = yScale.ticks(5);
       ticks.forEach(tick => {
         const y = yScale(tick);
         context.beginPath();
@@ -109,10 +110,11 @@ export const useCanvasChart = ({
       });
     }
 
+    context.globalAlpha = 1;
     context.restore();
   }, [width, height, margin]);
 
-  // Fonction de dessin des axes
+  // Fonction de dessin des axes optimisée
   const drawAxes = useCallback((context, scales) => {
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
@@ -121,7 +123,7 @@ export const useCanvasChart = ({
     context.translate(margin.left, margin.top);
     context.strokeStyle = '#374151';
     context.fillStyle = '#374151';
-    context.font = '12px Inter, sans-serif';
+    context.font = '11px Inter, sans-serif';
     context.lineWidth = 1;
 
     // Axe X
@@ -130,14 +132,14 @@ export const useCanvasChart = ({
     context.lineTo(innerWidth, innerHeight);
     context.stroke();
 
-    // Labels axe X
+    // Labels axe X (réduits pour éviter l'encombrement)
     if (scales.x) {
-      const ticks = scales.x.domain().filter((_, i) => i % Math.ceil(scales.x.domain().length / 6) === 0);
+      const ticks = scales.x.domain().filter((_, i) => i % Math.ceil(scales.x.domain().length / 5) === 0);
       context.textAlign = 'center';
       context.textBaseline = 'top';
       ticks.forEach(tick => {
         const x = scales.x(tick);
-        context.fillText(tick, x, innerHeight + 10);
+        context.fillText(tick, x, innerHeight + 8);
       });
     }
 
@@ -151,12 +153,13 @@ export const useCanvasChart = ({
     const yScaleKey = Object.keys(scales).find(key => key !== 'x');
     if (yScaleKey && scales[yScaleKey]) {
       const yScale = scales[yScaleKey];
-      const ticks = yScale.ticks(6);
+      const ticks = yScale.ticks(5);
       context.textAlign = 'right';
       context.textBaseline = 'middle';
       ticks.forEach(tick => {
         const y = yScale(tick);
-        context.fillText(tick.toString(), -10, y);
+        const formattedTick = tick >= 1000 ? `${(tick/1000).toFixed(1)}k` : tick.toString();
+        context.fillText(formattedTick, -8, y);
       });
     }
 
@@ -171,7 +174,7 @@ export const useCanvasChart = ({
       .context(contextRef.current);
 
     if (smoothCurve) {
-      line.curve(d3.curveCardinal.tension(0.3));
+      line.curve(d3.curveCardinal.tension(0.2));
     }
 
     return line;
@@ -188,33 +191,40 @@ export const useCanvasChart = ({
       .context(contextRef.current);
 
     if (smoothCurve) {
-      area.curve(d3.curveCardinal.tension(0.3));
+      area.curve(d3.curveCardinal.tension(0.2));
     }
 
     return area;
   }, [smoothCurve, height, margin]);
 
-  // Animation avec easing
+  // Animation avec easing optimisée pour éviter le scintillement
   const animateChart = useCallback((drawFunction) => {
     if (!animate) {
       drawFunction(1);
       return;
     }
 
-    const duration = 800;
+    // Annuler l'animation précédente si elle existe
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
+
+    const duration = 600; // Durée réduite pour plus de fluidité
     const startTime = performance.now();
 
     const animateFrame = (currentTime) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
       
-      // Easing function (ease-out-cubic)
-      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      // Easing function (ease-out-cubic) plus douce
+      const easedProgress = 1 - Math.pow(1 - progress, 2);
       
       drawFunction(easedProgress);
 
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animateFrame);
+      } else {
+        animationRef.current = null;
       }
     };
 
@@ -226,6 +236,7 @@ export const useCanvasChart = ({
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
       }
     };
   }, []);

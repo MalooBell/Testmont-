@@ -4,24 +4,26 @@ import useCanvasChart from '../hooks/useCanvasChart';
 
 const CanvasAreaChart = ({
   data = [],
-  width = 800,
-  height = 400,
-  margin = { top: 20, right: 30, bottom: 40, left: 50 },
+  width = 1200,
+  height = 350,
+  margin = { top: 20, right: 50, bottom: 40, left: 60 },
   areas = [],
   colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
   animate = true,
   stacked = false,
   opacity = 0.6,
   strokeWidth = 2,
-  className = ''
+  className = '',
+  useFixedScale = true
 }) => {
   const tooltipRef = useRef(null);
   const hoverDataRef = useRef(null);
   
-  // Références pour les échelles stables
+  // Références pour les échelles stables et repères fixes
   const scalesRef = useRef(null);
   const lastDataLengthRef = useRef(0);
   const lastDomainRef = useRef({ x: null, y: null });
+  const fixedDomainRef = useRef({ x: null, y: null });
 
   const {
     canvasRef,
@@ -35,7 +37,7 @@ const CanvasAreaChart = ({
     width,
     height,
     margin,
-    animate: false, // Désactiver l'animation pour éviter le scintillement
+    animate: false,
     smoothCurve: true
   });
 
@@ -90,7 +92,7 @@ const CanvasAreaChart = ({
     return result;
   }, [processedData, stacked]);
 
-  // Création d'échelles stables pour éviter le scintillement
+  // Création d'échelles stables avec repères fixes pour éviter le scintillement
   const createStableScales = useCallback(() => {
     if (!stackedData.length || !data.length) return null;
 
@@ -101,22 +103,38 @@ const CanvasAreaChart = ({
 
     if (!timeValues.length || !allValues.length) return null;
 
-    // Créer des domaines stables
+    // Créer des domaines avec repères fixes si activé
     const xDomain = timeValues;
     const yMax = d3.max(allValues);
-    const yDomain = [0, yMax * 1.1];
+    
+    let finalYDomain;
+    if (useFixedScale && fixedDomainRef.current.y) {
+      // Utiliser le domaine fixe existant, mais l'étendre si nécessaire
+      const [currentMin, currentMax] = fixedDomainRef.current.y;
+      finalYDomain = [
+        currentMin,
+        Math.max(currentMax, yMax * 1.1)
+      ];
+    } else {
+      finalYDomain = [0, yMax * 1.1];
+    }
+
+    // Sauvegarder le domaine fixe
+    if (useFixedScale) {
+      fixedDomainRef.current.y = finalYDomain;
+    }
 
     // Vérifier si les domaines ont changé significativement
     const currentDomain = { 
       x: xDomain.join(','), 
-      y: `${yDomain[0]}-${yDomain[1]}` 
+      y: `${finalYDomain[0]}-${finalYDomain[1]}` 
     };
 
     // Ne recréer les échelles que si nécessaire
     if (!scalesRef.current || 
         lastDataLengthRef.current !== data.length ||
         lastDomainRef.current.x !== currentDomain.x ||
-        Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - yDomain[1]) > yDomain[1] * 0.1) {
+        (!useFixedScale && Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - finalYDomain[1]) > finalYDomain[1] * 0.1)) {
       
       const xScale = d3.scalePoint()
         .domain(xDomain)
@@ -124,7 +142,7 @@ const CanvasAreaChart = ({
         .padding(0.1);
 
       const yScale = d3.scaleLinear()
-        .domain(yDomain)
+        .domain(finalYDomain)
         .range([height - margin.top - margin.bottom, 0])
         .nice();
 
@@ -134,10 +152,10 @@ const CanvasAreaChart = ({
     }
 
     return scalesRef.current;
-  }, [stackedData, data, width, height, margin, stacked]);
+  }, [stackedData, data, width, height, margin, stacked, useFixedScale]);
 
-  // Fonction de dessin principal optimisée
-  const drawChart = useCallback(() => {
+  // Fonction de dessin principal optimisée avec animations fluides
+  const drawChart = useCallback((progress = 1) => {
     const context = setupCanvas();
     if (!context || !stackedData.length) return;
 
@@ -155,7 +173,7 @@ const CanvasAreaChart = ({
     // Dessiner les axes avec les échelles stables
     drawAxes(context, scales);
 
-    // Dessiner les aires
+    // Dessiner les aires avec animation
     context.save();
     context.translate(margin.left, margin.top);
 
@@ -171,12 +189,19 @@ const CanvasAreaChart = ({
 
       if (validData.length < 2) return;
 
+      // Animation : limiter les données affichées selon le progrès
+      const animatedData = animate ? 
+        validData.slice(0, Math.ceil(validData.length * progress)) : 
+        validData;
+
+      if (animatedData.length < 2) return;
+
       // Créer le générateur d'aire
       const area = d3.area()
         .x(d => scales.x(d.time))
         .y0(d => stacked ? scales.y(d.y0 || 0) : innerHeight)
         .y1(d => scales.y(stacked ? (d.y1 || d.value) : d.value))
-        .curve(d3.curveCardinal.tension(0.3))
+        .curve(d3.curveCardinal.tension(0.2))
         .context(context);
 
       // Dessiner l'aire avec gradient
@@ -187,10 +212,10 @@ const CanvasAreaChart = ({
 
       context.fillStyle = gradient;
       context.beginPath();
-      area(validData);
+      area(animatedData);
       context.fill();
 
-      // Dessiner la ligne de contour
+      // Dessiner la ligne de contour avec animation
       context.strokeStyle = areaData.color;
       context.lineWidth = strokeWidth;
       context.lineCap = 'round';
@@ -201,18 +226,18 @@ const CanvasAreaChart = ({
       const line = d3.line()
         .x(d => scales.x(d.time))
         .y(d => scales.y(stacked ? (d.y1 || d.value) : d.value))
-        .curve(d3.curveCardinal.tension(0.3))
+        .curve(d3.curveCardinal.tension(0.2))
         .context(context);
 
       context.beginPath();
-      line(validData);
+      line(animatedData);
       context.stroke();
 
       context.globalAlpha = 1;
     });
 
     context.restore();
-  }, [setupCanvas, stackedData, width, height, margin, drawGrid, drawAxes, stacked, opacity, strokeWidth, createStableScales]);
+  }, [setupCanvas, stackedData, width, height, margin, drawGrid, drawAxes, stacked, opacity, strokeWidth, createStableScales, animate]);
 
   // Gestion du survol pour les tooltips
   const handleMouseMove = useCallback((event) => {
@@ -273,14 +298,17 @@ const CanvasAreaChart = ({
     hoverDataRef.current = null;
   }, []);
 
-  // Effet pour redessiner quand les données changent (sans animation)
+  // Effet pour redessiner avec animation fluide
   useEffect(() => {
     if (stackedData.length > 0) {
-      // Utiliser requestAnimationFrame pour un rendu fluide
-      const rafId = requestAnimationFrame(drawChart);
-      return () => cancelAnimationFrame(rafId);
+      if (animate) {
+        animateChart(drawChart);
+      } else {
+        const rafId = requestAnimationFrame(() => drawChart(1));
+        return () => cancelAnimationFrame(rafId);
+      }
     }
-  }, [stackedData, drawChart]);
+  }, [stackedData, drawChart, animate, animateChart]);
 
   return (
     <div className={`relative ${className}`}>

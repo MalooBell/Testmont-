@@ -4,23 +4,25 @@ import * as d3 from 'd3';
 
 const CanvasLineChart = ({
   data = [],
-  width = 800,
-  height = 400,
-  margin = { top: 20, right: 3, bottom: 40, left: 5 },
+  width = 1200,
+  height = 350,
+  margin = { top: 20, right: 50, bottom: 40, left: 60 },
   lines = [],
   colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
   animate = true,
   showPoints = false,
   strokeWidth = 2,
-  className = ''
+  className = '',
+  useFixedScale = true
 }) => {
   const tooltipRef = useRef(null);
   const hoverDataRef = useRef(null);
   
-  // Références pour les échelles stables
+  // Références pour les échelles stables et repères fixes
   const scalesRef = useRef(null);
   const lastDataLengthRef = useRef(0);
   const lastDomainRef = useRef({ x: null, y: null });
+  const fixedDomainRef = useRef({ x: null, y: null });
 
   const {
     canvasRef,
@@ -35,7 +37,7 @@ const CanvasLineChart = ({
     width,
     height,
     margin,
-    animate: false, // Désactiver l'animation pour éviter le scintillement
+    animate: false,
     smoothCurve: true
   });
 
@@ -54,7 +56,7 @@ const CanvasLineChart = ({
     }));
   }, [data, lines, colors]);
 
-  // Création d'échelles stables pour éviter le scintillement
+  // Création d'échelles stables avec repères fixes pour éviter le scintillement
   const createStableScales = useCallback(() => {
     if (!processedData.length || !data.length) return null;
 
@@ -63,23 +65,39 @@ const CanvasLineChart = ({
 
     if (!timeValues.length || !allValues.length) return null;
 
-    // Créer des domaines stables
+    // Créer des domaines avec repères fixes si activé
     const xDomain = timeValues;
     const yMin = Math.min(0, d3.min(allValues));
     const yMax = d3.max(allValues);
-    const yDomain = [yMin, yMax * 1.1];
+    
+    let finalYDomain;
+    if (useFixedScale && fixedDomainRef.current.y) {
+      // Utiliser le domaine fixe existant, mais l'étendre si nécessaire
+      const [currentMin, currentMax] = fixedDomainRef.current.y;
+      finalYDomain = [
+        Math.min(currentMin, yMin),
+        Math.max(currentMax, yMax * 1.1)
+      ];
+    } else {
+      finalYDomain = [yMin, yMax * 1.1];
+    }
+
+    // Sauvegarder le domaine fixe
+    if (useFixedScale) {
+      fixedDomainRef.current.y = finalYDomain;
+    }
 
     // Vérifier si les domaines ont changé significativement
     const currentDomain = { 
       x: xDomain.join(','), 
-      y: `${yDomain[0]}-${yDomain[1]}` 
+      y: `${finalYDomain[0]}-${finalYDomain[1]}` 
     };
 
     // Ne recréer les échelles que si nécessaire
     if (!scalesRef.current || 
         lastDataLengthRef.current !== data.length ||
         lastDomainRef.current.x !== currentDomain.x ||
-        Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - yDomain[1]) > yDomain[1] * 0.1) {
+        (!useFixedScale && Math.abs(parseFloat(lastDomainRef.current.y?.split('-')[1] || 0) - finalYDomain[1]) > finalYDomain[1] * 0.1)) {
       
       const xScale = d3.scalePoint()
         .domain(xDomain)
@@ -87,7 +105,7 @@ const CanvasLineChart = ({
         .padding(0.1);
 
       const yScale = d3.scaleLinear()
-        .domain(yDomain)
+        .domain(finalYDomain)
         .range([height - margin.top - margin.bottom, 0])
         .nice();
 
@@ -97,10 +115,10 @@ const CanvasLineChart = ({
     }
 
     return scalesRef.current;
-  }, [processedData, data, width, height, margin]);
+  }, [processedData, data, width, height, margin, useFixedScale]);
 
-  // Fonction de dessin principal optimisée
-  const drawChart = useCallback(() => {
+  // Fonction de dessin principal optimisée avec animations fluides
+  const drawChart = useCallback((progress = 1) => {
     const context = setupCanvas();
     if (!context || !processedData.length) return;
 
@@ -116,7 +134,7 @@ const CanvasLineChart = ({
     // Dessiner les axes avec les échelles stables
     drawAxes(context, scales);
 
-    // Dessiner les lignes
+    // Dessiner les lignes avec animation
     context.save();
     context.translate(margin.left, margin.top);
 
@@ -130,16 +148,23 @@ const CanvasLineChart = ({
 
       if (validData.length < 2) return;
 
-      // Configuration du style
+      // Animation : limiter les données affichées selon le progrès
+      const animatedData = animate ? 
+        validData.slice(0, Math.ceil(validData.length * progress)) : 
+        validData;
+
+      if (animatedData.length < 2) return;
+
+      // Configuration du style avec effet de halo réduit pour éviter le scintillement
       context.strokeStyle = lineData.color;
       context.lineWidth = strokeWidth;
       context.lineCap = 'round';
       context.lineJoin = 'round';
 
-      // Dessiner la ligne avec effet de halo
+      // Dessiner la ligne avec effet de halo subtil
       context.shadowColor = lineData.color;
-      context.shadowBlur = 3;
-      context.globalAlpha = 0.8;
+      context.shadowBlur = animate ? 2 : 1;
+      context.globalAlpha = 0.9;
 
       // Générer le chemin de la ligne
       context.beginPath();
@@ -148,10 +173,10 @@ const CanvasLineChart = ({
       const line = d3.line()
         .x(d => scales.x(d.time))
         .y(d => scales.y(d.value))
-        .curve(d3.curveCardinal.tension(0.3))
+        .curve(d3.curveCardinal.tension(0.2))
         .context(context);
 
-      line(validData);
+      line(animatedData);
       context.stroke();
 
       // Réinitialiser les effets
@@ -161,28 +186,35 @@ const CanvasLineChart = ({
       // Dessiner les points si demandé
       if (showPoints) {
         context.fillStyle = lineData.color;
-        validData.forEach(d => {
-          const x = scales.x(d.time);
-          const y = scales.y(d.value);
+        animatedData.forEach((d, pointIndex) => {
+          // Animation des points
+          const pointProgress = animate ? 
+            Math.max(0, Math.min(1, (progress * animatedData.length - pointIndex) / 1)) : 1;
           
-          context.beginPath();
-          context.arc(x, y, 3, 0, 2 * Math.PI);
-          context.fill();
-          
-          // Halo autour du point
-          context.beginPath();
-          context.arc(x, y, 6, 0, 2 * Math.PI);
-          context.strokeStyle = lineData.color;
-          context.lineWidth = 1;
-          context.globalAlpha = 0.3;
-          context.stroke();
-          context.globalAlpha = 1;
+          if (pointProgress > 0) {
+            const x = scales.x(d.time);
+            const y = scales.y(d.value);
+            const radius = 3 * pointProgress;
+            
+            context.beginPath();
+            context.arc(x, y, radius, 0, 2 * Math.PI);
+            context.fill();
+            
+            // Halo autour du point (réduit)
+            context.beginPath();
+            context.arc(x, y, radius + 2, 0, 2 * Math.PI);
+            context.strokeStyle = lineData.color;
+            context.lineWidth = 1;
+            context.globalAlpha = 0.2 * pointProgress;
+            context.stroke();
+            context.globalAlpha = 1;
+          }
         });
       }
     });
 
     context.restore();
-  }, [setupCanvas, processedData, width, height, margin, drawGrid, drawAxes, strokeWidth, showPoints, createStableScales]);
+  }, [setupCanvas, processedData, width, height, margin, drawGrid, drawAxes, strokeWidth, showPoints, createStableScales, animate]);
 
   // Gestion du survol pour les tooltips
   const handleMouseMove = useCallback((event) => {
@@ -195,13 +227,18 @@ const CanvasLineChart = ({
     const timeValues = data.map(d => d.time);
     const xScale = scalesRef.current.x;
 
-    const bisector = d3.bisector(d => d.time).left;
-    const timeValue = xScale.invert(x); // Utilisez l'inversion de l'échelle si possible
-    const index = bisector(data, timeValue, 1);
+    // Find the closest point without using invert
+    let closestTimeIndex = 0;
+    let minDistance = Infinity;
 
-    const d0 = data[index - 1];
-    const d1 = data[index];
-    const closestTimeIndex = (d1 && timeValue - d0.time > d1.time - timeValue) ? index : index -1;
+    const domain = xScale.domain();
+    domain.forEach((d, i) => {
+      const distance = Math.abs(xScale(d) - x);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestTimeIndex = i;
+      }
+    });
     const closestTime = timeValues[closestTimeIndex];
 
     if (closestTime && tooltipRef.current) {
@@ -213,7 +250,7 @@ const CanvasLineChart = ({
 
       hoverDataRef.current = { time: closestTime, data: tooltipData, x: event.clientX, y: event.clientY };
       
-      // Afficher le tooltip (implémentation basique)
+      // Afficher le tooltip
       tooltipRef.current.style.display = 'block';
       tooltipRef.current.style.left = `${event.clientX + 10}px`;
       tooltipRef.current.style.top = `${event.clientY - 10}px`;
@@ -238,14 +275,17 @@ const CanvasLineChart = ({
     hoverDataRef.current = null;
   }, []);
 
-  // Effet pour redessiner quand les données changent (sans animation)
+  // Effet pour redessiner avec animation fluide
   useEffect(() => {
     if (processedData.length > 0) {
-      // Utiliser requestAnimationFrame pour un rendu fluide
-      const rafId = requestAnimationFrame(drawChart);
-      return () => cancelAnimationFrame(rafId);
+      if (animate) {
+        animateChart(drawChart);
+      } else {
+        const rafId = requestAnimationFrame(() => drawChart(1));
+        return () => cancelAnimationFrame(rafId);
+      }
     }
-  }, [processedData, drawChart]);
+  }, [processedData, drawChart, animate, animateChart]);
 
   return (
     <div className={`relative ${className}`}>

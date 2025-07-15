@@ -37,7 +37,7 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
     return latestData.stats.find(stat => stat.name === 'Aggregated') || {};
   }, [latestData]);
 
-  // Utiliser historyRef.current et historyVersion pour mémoriser les données
+  // Utiliser historyRef.current et historyVersion pour mémoriser les données RÉELLES
   const chartData = useMemo(() => {
     const history = historyRef.current;
     return {
@@ -139,8 +139,8 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.responseTime.length > 0 ? (
           <CanvasLineChart
             data={chartData.responseTime}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             lines={[
               { dataKey: 'avg', name: 'Moyenne', color: '#3b82f6' },
               { dataKey: 'median', name: 'Médiane', color: '#10b981' },
@@ -149,9 +149,10 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
             animate={true}
             showPoints={false}
             strokeWidth={2}
+            useFixedScale={true}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée de temps de réponse disponible
           </div>
         )}
@@ -166,8 +167,8 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.requestsRate.length > 0 ? (
           <CanvasAreaChart
             data={chartData.requestsRate}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             areas={[
               { dataKey: 'rps', name: 'RPS Actuel', color: '#3b82f6', stackId: '1' },
               { dataKey: 'totalRps', name: 'RPS Total', color: '#10b981', stackId: '2' }
@@ -176,9 +177,10 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
             stacked={false}
             opacity={0.6}
             strokeWidth={2}
+            useFixedScale={true}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée de taux de requêtes disponible
           </div>
         )}
@@ -193,8 +195,8 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.errorRate.length > 0 ? (
           <CanvasLineChart
             data={chartData.errorRate}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             lines={[
               { dataKey: 'failures', name: 'Nombre d\'échecs', color: '#ef4444' },
               { dataKey: 'errorRate', name: 'Taux d\'erreur %', color: '#f59e0b' }
@@ -202,9 +204,10 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
             animate={true}
             showPoints={true}
             strokeWidth={2}
+            useFixedScale={true}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée d'erreurs disponible
           </div>
         )}
@@ -219,8 +222,8 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.requestsTotal.length > 0 ? (
           <CanvasAreaChart
             data={chartData.requestsTotal}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             areas={[
               { dataKey: 'successes', name: 'Succès', color: '#22c55e', stackId: 'main' },
               { dataKey: 'failures', name: 'Échecs', color: '#ef4444', stackId: 'main' }
@@ -229,9 +232,10 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
             stacked={true}
             opacity={0.7}
             strokeWidth={2}
+            useFixedScale={true}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée de volume disponible
           </div>
         )}
@@ -246,8 +250,8 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         {chartData.userCount.length > 0 ? (
           <CanvasAreaChart
             data={chartData.userCount}
-            width={800}
-            height={300}
+            width={1200}
+            height={350}
             areas={[
               { dataKey: 'users', name: 'Utilisateurs actifs', color: '#3b82f6' }
             ]}
@@ -255,9 +259,10 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
             stacked={false}
             opacity={0.4}
             strokeWidth={3}
+            useFixedScale={true}
           />
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-500">
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
             Aucune donnée d'utilisateurs disponible
           </div>
         )}
