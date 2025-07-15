@@ -16,11 +16,8 @@ Interface Angular pour piloter et monitorer vos tests de charge avec Locust, Pro
          │              │ (Historique) │    │   (Métriques)   │
          │              └──────────────┘    └─────────────────┘
          │                                           │
-         └───────────────────────────────────────────▼
-                                           ┌─────────────────┐
-                                           │     Grafana     │
-                                           │  (Dashboards)   │
-                                           └─────────────────┘
+         └───────────────────────────────────────────<
+                                          
 ```
 
 ## Fonctionnalités
@@ -32,7 +29,6 @@ Interface Angular pour piloter et monitorer vos tests de charge avec Locust, Pro
 - **Statut en temps réel** avec métriques live
 
 ### 📊 Monitoring Intégré
-- **Dashboards Grafana** intégrés dans l'interface
 - **Métriques Prometheus** en temps réel
 - **Interface Locust** accessible directement
 - **WebSocket** pour les mises à jour live
@@ -40,7 +36,6 @@ Interface Angular pour piloter et monitorer vos tests de charge avec Locust, Pro
 ### 📈 Historique et Analyse
 - **Base de données SQLite** pour l'historique
 - **Comparaison** entre différents tests
-- **Export** vers Grafana avec filtrage temporel
 - **Métriques clés** : temps de réponse, RPS, taux d'erreur
 
 ## Installation et Démarrage
@@ -100,7 +95,6 @@ npm start
 - **API Backend**: http://localhost:3001
 - **Locust UI**: http://localhost:8089
 - **Prometheus**: http://localhost:9090
-- **Grafana**: http://localhost:3000 (admin/admin)
 
 ## Utilisation
 
@@ -116,13 +110,11 @@ npm start
 
 ### Suivre un Test
 - **Métriques temps réel** dans l'onglet "Nouveau Test"
-- **Dashboards Grafana** dans l'onglet "Monitoring"
 - **Interface Locust** via le menu (bouton ⋮)
 
 ### Analyser l'Historique
 1. Onglet **"Historique"**
 2. Consulter les **résultats passés**
-3. Cliquer sur 📊 pour **ouvrir dans Grafana**
 4. **Comparer** les performances entre tests
 
 ## Configuration Avancée
@@ -147,11 +139,6 @@ Modifier `prometheus/prometheus.yml` pour ajouter de nouvelles sources de métri
 2. Vérifier les ports disponibles (8089, 9090, 3000)
 3. Consulter les logs : `docker-compose logs`
 
-### Pas de métriques dans Grafana
-1. Vérifier la connexion Prometheus : http://localhost:9090/targets
-2. Vérifier la configuration datasource dans Grafana
-3. Redémarrer les services : `docker-compose restart`
-
 ### Interface non accessible
 1. Vérifier que le backend est démarré : `npm run dev`
 2. Vérifier que le frontend est compilé : `npm run build-frontend`
@@ -168,8 +155,6 @@ Modifier `prometheus/prometheus.yml` pour ajouter de nouvelles sources de métri
 │   └── src/services/      # Services (API, WebSocket)
 ├── locust/                # Configuration Locust
 ├── prometheus/            # Configuration Prometheus
-├── grafana/               # Configuration Grafana
-└── scripts/               # Scripts utilitaires
 ```
 
 ### Ajouter des Fonctionnalités

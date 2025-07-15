@@ -15,8 +15,8 @@ import LocustMetricsCharts from './LocustMetricsCharts';
 import NodeExporterCharts from './NodeExporterCharts';
 
 // Nombre maximum de points de données à conserver dans les graphiques pour la performance
-const MAX_DATA_POINTS = 500; // Augmenté pour plus de détails
-const UPDATE_THROTTLE_MS = 500; // Réduit pour plus de fluidité
+const MAX_DATA_POINTS = 100; // Augmenté pour plus de détails
+const UPDATE_THROTTLE_MS = 25; // Réduit pour plus de fluidité
 
 
 const Visualization = () => {

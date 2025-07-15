@@ -41,6 +41,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
     return metricData.data.result;
   }, []);
 
+    
   // Mémoriser les métriques actuelles avec plus de détails
   const currentMetrics = useMemo(() => {
     if (!latestData) return {};

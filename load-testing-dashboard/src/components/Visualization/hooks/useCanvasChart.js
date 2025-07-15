@@ -3,9 +3,9 @@ import * as d3 from 'd3';
 
 export const useCanvasChart = ({
   data = [],
-  width = 800,
+  width = 2000,
   height = 400,
-  margin = { top: 20, right: 30, bottom: 40, left: 50 },
+  margin = { top: 20, right: 3, bottom: 40, left: 5 },
   animate = true,
   smoothCurve = true
 }) => {

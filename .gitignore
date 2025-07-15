@@ -1,2 +1,4 @@
 node_modules/
 .env
+/load-testing-dashboard/node_modules/
+/server/loadtest_history.db
