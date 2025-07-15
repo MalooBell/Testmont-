@@ -1,0 +1,25 @@
+{
+  "name": "load-testing-dashboard-backend",
+  "version": "1.0.0",
+  "description": "Load Testing Dashboard Backend",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "nodemon server/index.js",
+    "start": "node server/index.js",
+    "build-frontend": "cd frontend && npm run build",
+    "serve-frontend": "cd frontend && npm run dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "dependencies": {
+    "axios": "^1.10.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "sqlite3": "^5.1.7",
+    "ws": "^8.18.3"
+  }
+}
